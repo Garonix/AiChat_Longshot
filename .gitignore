@@ -1,0 +1,18 @@
+# Extension packages and generated release assets
+*.zip
+*.crx
+*.pem
+
+# Local browser/debug artifacts
+.playwright-mcp/
+
+# Obsolete scaffold folders kept out of the source tree
+/background/
+/content/
+/icons/
+/popup/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+*.log

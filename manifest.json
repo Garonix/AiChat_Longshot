@@ -1,0 +1,35 @@
+{
+  "manifest_version": 3,
+  "name": "Chat Longshot",
+  "version": "0.2.24",
+  "description": "Capture selected height ranges from ChatGPT and Gemini as original long screenshots.",
+  "action": {
+    "default_title": "Chat Longshot"
+  },
+  "background": {
+    "service_worker": "background.js"
+  },
+  "permissions": [
+    "activeTab",
+    "downloads",
+    "scripting",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://chatgpt.com/*",
+    "https://chat.openai.com/*",
+    "https://gemini.google.com/*",
+    "https://grok.com/*",
+    "https://x.com/i/grok*",
+    "https://doubao.com/*",
+    "https://www.doubao.com/*",
+    "https://chat.deepseek.com/*",
+    "https://www.deepseek.com/*",
+    "https://deepseek.com/*"
+  ],
+  "icons": {
+    "16": "icon16.svg",
+    "48": "icon48.svg",
+    "128": "icon128.svg"
+  }
+}
