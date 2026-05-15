@@ -796,7 +796,7 @@
       return logicalBottom;
     }
 
-    const composerTop = window.scrollY + composerRect.top - 8;
+    const composerTop = window.scrollY + composerRect.top;
     return Math.min(logicalBottom, composerTop);
   }
 
@@ -805,6 +805,7 @@
     const selectors = [
       "textarea",
       "input[type='text']",
+      "[placeholder]",
       "[contenteditable='true']",
       "[role='textbox']",
       "form",
@@ -813,26 +814,21 @@
       "[class*='chat-input' i]",
       "[class*='message-input' i]",
       "[class*='input-area' i]",
+      "[class*='input-box' i]",
       "[class*='inputBox' i]",
+      "[class*='sender' i]",
+      "[class*='send-box' i]",
       "[aria-label*='prompt' i]",
-      "[aria-label*='message' i]"
+      "[aria-label*='message' i]",
+      "[aria-label*='发送' i]",
+      "[aria-label*='輸入' i]"
     ];
 
     document.querySelectorAll(selectors.join(",")).forEach((element) => {
       let current = element;
-      for (let depth = 0; current && depth < 6; depth += 1) {
-        if (current !== state?.root && !state?.root?.contains(current)) {
-          const rect = current.getBoundingClientRect();
-          const style = getComputedStyle(current);
-          const visible = rect.width > window.innerWidth * 0.35
-            && rect.height >= 44
-            && rect.bottom > window.innerHeight * 0.58
-            && rect.top < window.innerHeight
-            && style.display !== "none"
-            && style.visibility !== "hidden";
-          if (visible) {
-            candidates.push({ element: current, rect });
-          }
+      for (let depth = 0; current && depth < 9; depth += 1) {
+        if (isComposerVisualCandidate(current)) {
+          candidates.push({ element: current, rect: current.getBoundingClientRect() });
         }
         current = current.parentElement;
       }
@@ -843,12 +839,40 @@
     }
 
     candidates.sort((a, b) => {
-      const aScore = Math.abs(window.innerHeight - a.rect.bottom) + Math.abs(window.innerWidth - a.rect.width) * 0.08;
-      const bScore = Math.abs(window.innerHeight - b.rect.bottom) + Math.abs(window.innerWidth - b.rect.width) * 0.08;
+      const aScore = composerVisualScore(a.rect);
+      const bScore = composerVisualScore(b.rect);
       return aScore - bScore;
     });
 
     return candidates[0].rect;
+  }
+
+  function isComposerVisualCandidate(element) {
+    if (!element || element === document.body || element === document.documentElement) {
+      return false;
+    }
+    if (element === state?.root || state?.root?.contains(element)) {
+      return false;
+    }
+
+    const rect = element.getBoundingClientRect();
+    const style = getComputedStyle(element);
+    return rect.width > window.innerWidth * 0.35
+      && rect.width < window.innerWidth * 0.94
+      && rect.height >= 56
+      && rect.height < window.innerHeight * 0.45
+      && rect.bottom > window.innerHeight * 0.62
+      && rect.top < window.innerHeight
+      && style.display !== "none"
+      && style.visibility !== "hidden"
+      && style.opacity !== "0";
+  }
+
+  function composerVisualScore(rect) {
+    const visibleBottom = Math.min(rect.bottom, window.innerHeight);
+    const bottomDistance = Math.abs(window.innerHeight - visibleBottom);
+    const centerDistance = Math.abs((rect.left + rect.right) / 2 - window.innerWidth / 2);
+    return bottomDistance * 2 + centerDistance * 0.05 - rect.width * 0.18 - rect.height * 0.35;
   }
 
   function createCandidateItem(element) {
