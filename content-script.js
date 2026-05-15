@@ -606,6 +606,9 @@
 
     window.removeEventListener("scroll", state.refreshPositions, true);
     window.removeEventListener("resize", state.refreshPositions, true);
+    if (state.refreshFrame) {
+      cancelAnimationFrame(state.refreshFrame);
+    }
     state.root.remove();
     state = null;
   }
@@ -683,6 +686,8 @@
       return;
     }
 
+    updateComposerVisualCache();
+
     state.items.forEach((item) => {
       delete item.marker.dataset.picked;
     });
@@ -752,7 +757,7 @@
   }
 
   function getSelectionVisualBounds(points) {
-    const composerRect = findComposerVisualRect();
+    const composerRect = getComposerVisualRect();
     if (composerRect) {
       return {
         left: Math.max(0, composerRect.left + window.scrollX),
@@ -802,13 +807,48 @@
   }
 
   function getSelectionVisualBottom(logicalBottom) {
-    const composerRect = findComposerVisualRect();
+    const composerRect = getComposerVisualRect();
     if (!composerRect) {
       return logicalBottom;
     }
 
     const composerTop = window.scrollY + composerRect.top;
     return Math.min(logicalBottom, composerTop);
+  }
+
+  function getComposerVisualRect() {
+    return state?.currentComposerRect || state?.lastComposerRect || null;
+  }
+
+  function updateComposerVisualCache() {
+    if (!state) {
+      return;
+    }
+
+    const rect = findComposerVisualRect();
+    if (rect) {
+      state.lastComposerRect = freezeRect(rect);
+      state.currentComposerRect = state.lastComposerRect;
+      return;
+    }
+
+    if (state?.lastComposerRect && state.lastComposerRect.bottom > window.innerHeight * 0.55) {
+      state.currentComposerRect = state.lastComposerRect;
+      return;
+    }
+
+    state.currentComposerRect = null;
+  }
+
+  function freezeRect(rect) {
+    return {
+      left: rect.left,
+      right: rect.right,
+      top: rect.top,
+      bottom: rect.bottom,
+      width: rect.width,
+      height: rect.height
+    };
   }
 
   function findComposerVisualRect() {
@@ -889,9 +929,12 @@
     const visibleBottom = Math.min(rect.bottom, window.innerHeight);
     const bottomDistance = Math.abs(window.innerHeight - visibleBottom);
     const centerDistance = Math.abs((rect.left + rect.right) / 2 - window.innerWidth / 2);
-    const idealWidth = window.innerWidth * 0.72;
-    const widthDistance = Math.abs(rect.width - idealWidth);
-    return bottomDistance * 2 + centerDistance * 0.05 + widthDistance * 0.08 - rect.height * 0.35;
+    const targetMin = window.innerWidth * 0.52;
+    const targetMax = window.innerWidth * 0.82;
+    const widthPenalty = rect.width < targetMin
+      ? (targetMin - rect.width) * 0.28
+      : Math.max(0, rect.width - targetMax) * 0.14;
+    return bottomDistance * 2 + centerDistance * 0.05 + widthPenalty - rect.height * 0.35;
   }
 
   function createCandidateItem(element) {
@@ -959,6 +1002,20 @@
     renderSelection();
   }
 
+  function scheduleRefreshPositions() {
+    if (!state || state.refreshFrame) {
+      return;
+    }
+
+    state.refreshFrame = requestAnimationFrame(() => {
+      if (!state) {
+        return;
+      }
+      state.refreshFrame = 0;
+      refreshMarkerPositions();
+    });
+  }
+
   function startSelectionMode() {
     clearSelectionMode();
     ensureStyles();
@@ -994,8 +1051,11 @@
       items: [],
       points: [],
       lines: [],
+      lastComposerRect: null,
+      currentComposerRect: null,
       lastCandidateScanAt: 0,
-      refreshPositions: refreshMarkerPositions
+      refreshFrame: 0,
+      refreshPositions: scheduleRefreshPositions
     };
 
     candidates.forEach((element) => createCandidateItem(element));
