@@ -568,10 +568,10 @@
         pointer-events: none;
       }
       .${APP_ID}-line[data-picked="1"] {
-        background: #0b8f55;
+        background: #2c7df0;
       }
       .${APP_ID}-line[data-picked="2"] {
-        background: #ba4b00;
+        background: #2c7df0;
       }
       .${APP_ID}-range {
         position: absolute;
@@ -698,7 +698,10 @@
 
       const line = createElement("div", `${APP_ID}-line`);
       line.dataset.picked = String(index + 1);
-      line.style.top = `${index === 0 ? point.top : point.bottom}px`;
+      const lineTop = index === 0
+        ? Math.max(0, point.top - 5)
+        : getSelectionVisualBottom(point.bottom);
+      line.style.top = `${lineTop}px`;
       applySelectionWidth(line, state.points);
       state.root.appendChild(line);
       state.lines.push(line);
@@ -746,6 +749,14 @@
   }
 
   function getSelectionVisualBounds(points) {
+    const composerRect = findComposerVisualRect();
+    if (composerRect) {
+      return {
+        left: Math.max(0, composerRect.left + window.scrollX),
+        width: Math.max(1, composerRect.width)
+      };
+    }
+
     const rects = points.map(getPointVisualRect).filter((rect) => rect.right > rect.left);
     if (!rects.length) {
       return {
@@ -772,10 +783,72 @@
   function applySelectionRangeOverlay(top, bottom) {
     const bounds = getSelectionVisualBounds(state.points);
     const adjustedTop = Math.max(0, top - 5);
+    const visualBottom = getSelectionVisualBottom(bottom);
     state.rangeOverlay.style.top = `${adjustedTop}px`;
     state.rangeOverlay.style.left = `${bounds.left}px`;
     state.rangeOverlay.style.width = `${bounds.width}px`;
-    state.rangeOverlay.style.height = `${Math.max(0, bottom - adjustedTop)}px`;
+    state.rangeOverlay.style.height = `${Math.max(0, visualBottom - adjustedTop)}px`;
+  }
+
+  function getSelectionVisualBottom(logicalBottom) {
+    const composerRect = findComposerVisualRect();
+    if (!composerRect) {
+      return logicalBottom;
+    }
+
+    const composerTop = window.scrollY + composerRect.top - 8;
+    return Math.min(logicalBottom, composerTop);
+  }
+
+  function findComposerVisualRect() {
+    const candidates = [];
+    const selectors = [
+      "textarea",
+      "input[type='text']",
+      "[contenteditable='true']",
+      "[role='textbox']",
+      "form",
+      "[class*='composer' i]",
+      "[class*='prompt' i]",
+      "[class*='chat-input' i]",
+      "[class*='message-input' i]",
+      "[class*='input-area' i]",
+      "[class*='inputBox' i]",
+      "[aria-label*='prompt' i]",
+      "[aria-label*='message' i]"
+    ];
+
+    document.querySelectorAll(selectors.join(",")).forEach((element) => {
+      let current = element;
+      for (let depth = 0; current && depth < 6; depth += 1) {
+        if (current !== state?.root && !state?.root?.contains(current)) {
+          const rect = current.getBoundingClientRect();
+          const style = getComputedStyle(current);
+          const visible = rect.width > window.innerWidth * 0.35
+            && rect.height >= 44
+            && rect.bottom > window.innerHeight * 0.58
+            && rect.top < window.innerHeight
+            && style.display !== "none"
+            && style.visibility !== "hidden";
+          if (visible) {
+            candidates.push({ element: current, rect });
+          }
+        }
+        current = current.parentElement;
+      }
+    });
+
+    if (!candidates.length) {
+      return null;
+    }
+
+    candidates.sort((a, b) => {
+      const aScore = Math.abs(window.innerHeight - a.rect.bottom) + Math.abs(window.innerWidth - a.rect.width) * 0.08;
+      const bScore = Math.abs(window.innerHeight - b.rect.bottom) + Math.abs(window.innerWidth - b.rect.width) * 0.08;
+      return aScore - bScore;
+    });
+
+    return candidates[0].rect;
   }
 
   function createCandidateItem(element) {
