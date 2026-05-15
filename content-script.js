@@ -695,31 +695,34 @@
       if (item) {
         item.marker.dataset.picked = String(index + 1);
       }
-
-      const line = createElement("div", `${APP_ID}-line`);
-      line.dataset.picked = String(index + 1);
-      const lineTop = index === 0
-        ? Math.max(0, point.top - 5)
-        : getSelectionVisualBottom(point.bottom);
-      line.style.top = `${lineTop}px`;
-      applySelectionWidth(line, state.points);
-      state.root.appendChild(line);
-      state.lines.push(line);
     });
 
     if (state.points.length === 1) {
       const top = state.points[0].top;
       const bottom = state.points[0].bottom;
+      appendSelectionLine(top - 5);
+      appendSelectionLine(bottom);
       state.rangeOverlay.classList.remove(`${APP_ID}-hidden`);
       applySelectionRangeOverlay(top, bottom);
     } else if (state.points.length >= 2) {
       const top = state.points[0].top;
       const bottom = state.points[1].bottom;
+      appendSelectionLine(top - 5);
+      appendSelectionLine(bottom);
       state.rangeOverlay.classList.remove(`${APP_ID}-hidden`);
       applySelectionRangeOverlay(top, bottom);
     }
 
     updateToolbar();
+  }
+
+  function appendSelectionLine(logicalTop) {
+    const line = createElement("div", `${APP_ID}-line`);
+    line.dataset.picked = "1";
+    line.style.top = `${getSelectionVisualTop(getSelectionVisualBottom(logicalTop))}px`;
+    applySelectionWidth(line, state.points);
+    state.root.appendChild(line);
+    state.lines.push(line);
   }
 
   function getDocumentWidth() {
@@ -782,12 +785,20 @@
 
   function applySelectionRangeOverlay(top, bottom) {
     const bounds = getSelectionVisualBounds(state.points);
-    const adjustedTop = Math.max(0, top - 5);
+    const adjustedTop = getSelectionVisualTop(top - 5);
     const visualBottom = getSelectionVisualBottom(bottom);
     state.rangeOverlay.style.top = `${adjustedTop}px`;
     state.rangeOverlay.style.left = `${bounds.left}px`;
     state.rangeOverlay.style.width = `${bounds.width}px`;
     state.rangeOverlay.style.height = `${Math.max(0, visualBottom - adjustedTop)}px`;
+  }
+
+  function getSelectionVisualTop(logicalTop) {
+    const root = chooseScrollRoot();
+    const rootRect = isWindowScrollRoot(root)
+      ? { top: 0 }
+      : root.getBoundingClientRect();
+    return Math.max(logicalTop, window.scrollY + Math.max(0, rootRect.top));
   }
 
   function getSelectionVisualBottom(logicalBottom) {
@@ -805,10 +816,14 @@
     const selectors = [
       "textarea",
       "input[type='text']",
+      "#prompt-textarea",
       "[placeholder]",
       "[contenteditable='true']",
       "[role='textbox']",
       "form",
+      "[data-testid*='composer' i]",
+      "[data-testid*='prompt' i]",
+      "[data-testid*='textbox' i]",
       "[class*='composer' i]",
       "[class*='prompt' i]",
       "[class*='chat-input' i]",
@@ -818,6 +833,8 @@
       "[class*='inputBox' i]",
       "[class*='sender' i]",
       "[class*='send-box' i]",
+      "[id*='composer' i]",
+      "[id*='prompt' i]",
       "[aria-label*='prompt' i]",
       "[aria-label*='message' i]",
       "[aria-label*='发送' i]",
@@ -858,7 +875,7 @@
     const rect = element.getBoundingClientRect();
     const style = getComputedStyle(element);
     return rect.width > window.innerWidth * 0.35
-      && rect.width < window.innerWidth * 0.94
+      && rect.width < window.innerWidth * 0.97
       && rect.height >= 56
       && rect.height < window.innerHeight * 0.45
       && rect.bottom > window.innerHeight * 0.62
@@ -872,7 +889,9 @@
     const visibleBottom = Math.min(rect.bottom, window.innerHeight);
     const bottomDistance = Math.abs(window.innerHeight - visibleBottom);
     const centerDistance = Math.abs((rect.left + rect.right) / 2 - window.innerWidth / 2);
-    return bottomDistance * 2 + centerDistance * 0.05 - rect.width * 0.18 - rect.height * 0.35;
+    const idealWidth = window.innerWidth * 0.72;
+    const widthDistance = Math.abs(rect.width - idealWidth);
+    return bottomDistance * 2 + centerDistance * 0.05 + widthDistance * 0.08 - rect.height * 0.35;
   }
 
   function createCandidateItem(element) {
