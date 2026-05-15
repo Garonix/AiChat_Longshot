@@ -575,11 +575,11 @@
       }
       .${APP_ID}-range {
         position: absolute;
-        left: 0;
-        right: 0;
-        z-index: 2147483643;
+        z-index: 1;
         pointer-events: none;
-        background: rgba(44, 125, 240, 0.055);
+        border-radius: 8px;
+        background: rgba(44, 125, 240, 0.035);
+        box-shadow: inset 0 0 0 1px rgba(44, 125, 240, 0.12);
       }
       .${APP_ID}-hidden {
         display: none !important;
@@ -625,6 +625,8 @@
       element: item.element,
       top: pageRect.top,
       bottom: pageRect.bottom,
+      left: pageRect.left,
+      right: pageRect.left + pageRect.width,
       ranges: captureElementRanges(item.element)
     };
 
@@ -697,6 +699,7 @@
       const line = createElement("div", `${APP_ID}-line`);
       line.dataset.picked = String(index + 1);
       line.style.top = `${index === 0 ? point.top : point.bottom}px`;
+      applySelectionWidth(line, state.points);
       state.root.appendChild(line);
       state.lines.push(line);
     });
@@ -705,17 +708,74 @@
       const top = state.points[0].top;
       const bottom = state.points[0].bottom;
       state.rangeOverlay.classList.remove(`${APP_ID}-hidden`);
-      state.rangeOverlay.style.top = `${top}px`;
-      state.rangeOverlay.style.height = `${bottom - top}px`;
+      applySelectionRangeOverlay(top, bottom);
     } else if (state.points.length >= 2) {
       const top = state.points[0].top;
       const bottom = state.points[1].bottom;
       state.rangeOverlay.classList.remove(`${APP_ID}-hidden`);
-      state.rangeOverlay.style.top = `${top}px`;
-      state.rangeOverlay.style.height = `${Math.max(0, bottom - top)}px`;
+      applySelectionRangeOverlay(top, bottom);
     }
 
     updateToolbar();
+  }
+
+  function getDocumentWidth() {
+    const body = document.body;
+    const html = document.documentElement;
+    return Math.max(
+      window.innerWidth,
+      body.scrollWidth,
+      body.offsetWidth,
+      html.clientWidth,
+      html.scrollWidth,
+      html.offsetWidth
+    );
+  }
+
+  function getPointVisualRect(point) {
+    if (point.element?.isConnected) {
+      const rect = pageRectFor(point.element);
+      point.left = rect.left;
+      point.right = rect.left + rect.width;
+    }
+
+    return {
+      left: point.left ?? 0,
+      right: point.right ?? window.innerWidth
+    };
+  }
+
+  function getSelectionVisualBounds(points) {
+    const rects = points.map(getPointVisualRect).filter((rect) => rect.right > rect.left);
+    if (!rects.length) {
+      return {
+        left: 0,
+        width: window.innerWidth
+      };
+    }
+
+    const left = Math.max(0, Math.min(...rects.map((rect) => rect.left)) - 22);
+    const right = Math.min(getDocumentWidth(), Math.max(...rects.map((rect) => rect.right)) + 22);
+    return {
+      left,
+      width: Math.max(1, right - left)
+    };
+  }
+
+  function applySelectionWidth(element, points) {
+    const bounds = getSelectionVisualBounds(points);
+    element.style.left = `${bounds.left}px`;
+    element.style.right = "auto";
+    element.style.width = `${bounds.width}px`;
+  }
+
+  function applySelectionRangeOverlay(top, bottom) {
+    const bounds = getSelectionVisualBounds(state.points);
+    const adjustedTop = Math.max(0, top - 5);
+    state.rangeOverlay.style.top = `${adjustedTop}px`;
+    state.rangeOverlay.style.left = `${bounds.left}px`;
+    state.rangeOverlay.style.width = `${bounds.width}px`;
+    state.rangeOverlay.style.height = `${Math.max(0, bottom - adjustedTop)}px`;
   }
 
   function createCandidateItem(element) {
@@ -776,7 +836,9 @@
       ...point,
       element: point.element,
       top: point.element.isConnected ? pageRectFor(point.element).top : point.top,
-      bottom: point.element.isConnected ? pageRectFor(point.element).bottom : point.bottom
+      bottom: point.element.isConnected ? pageRectFor(point.element).bottom : point.bottom,
+      left: point.element.isConnected ? pageRectFor(point.element).left : point.left,
+      right: point.element.isConnected ? pageRectFor(point.element).left + pageRectFor(point.element).width : point.right
     }));
     renderSelection();
   }
