@@ -247,12 +247,76 @@
     return "web";
   }
 
-  function uniqueElements(elements) {
-    const visible = Array.from(new Set(elements)).filter((element) => {
+  function uniqueElements(elements, platform = getPlatform()) {
+    const normalized = normalizeCandidateElements(elements, platform);
+    const visible = Array.from(new Set(normalized)).filter((element) => {
       const rect = element.getBoundingClientRect();
       return rect.width > 220 && rect.height > 24 && isMainContentElement(element);
     });
     return keepRightmostCandidatePerRow(visible);
+  }
+
+  function normalizeCandidateElements(elements, platform) {
+    const roots = elements
+      .map((element) => getMessageCandidateRoot(element, platform))
+      .filter(Boolean);
+    return removeNestedCandidateElements(Array.from(new Set(roots)));
+  }
+
+  function getMessageCandidateRoot(element, platform) {
+    if (!element || element.nodeType !== Node.ELEMENT_NODE) {
+      return null;
+    }
+
+    const platformRootSelectors = {
+      chatgpt: [
+        "article[data-testid^='conversation-turn']",
+        "[data-testid^='conversation-turn']"
+      ],
+      gemini: [
+        "user-query",
+        "model-response"
+      ],
+      deepseek: [
+        ".ds-message",
+        "[class~='ds-message']"
+      ],
+      grok: [
+        "main article",
+        "main [role='article']",
+        "main [data-testid*='message' i]"
+      ],
+      doubao: [
+        "main [data-testid*='message' i]",
+        "main [class*='chat-message' i]",
+        "main article"
+      ]
+    };
+
+    const selectors = platformRootSelectors[platform] || [];
+    for (const selector of selectors) {
+      const root = element.closest(selector);
+      if (root) {
+        return root;
+      }
+    }
+
+    return element;
+  }
+
+  function removeNestedCandidateElements(elements) {
+    return elements.filter((element) => {
+      const rect = element.getBoundingClientRect();
+      return !elements.some((other) => {
+        if (other === element || !other.contains(element)) {
+          return false;
+        }
+        const otherRect = other.getBoundingClientRect();
+        const sameMessageBand = Math.abs(otherRect.top - rect.top) < 120 || rect.top >= otherRect.top;
+        const reasonableOuter = otherRect.height < window.innerHeight * 3.5;
+        return sameMessageBand && reasonableOuter;
+      });
+    });
   }
 
   function keepRightmostCandidatePerRow(elements) {
@@ -317,23 +381,17 @@
     const selectors = [
       "article[data-testid^='conversation-turn']",
       "[data-testid^='conversation-turn']",
-      "[data-message-author-role]",
-      "main article"
+      "[data-message-author-role]"
     ];
-    return uniqueElements(selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))));
+    return uniqueElements(selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))), "chatgpt");
   }
 
   function findGeminiCandidates() {
     const selectors = [
       "user-query",
-      "model-response",
-      "message-content",
-      ".query-content",
-      ".response-container",
-      "main [data-test-id*='response']",
-      "main [data-test-id*='query']"
+      "model-response"
     ];
-    return uniqueElements(selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))));
+    return uniqueElements(selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))), "gemini");
   }
 
   function findGrokCandidates() {
@@ -346,7 +404,7 @@
       "main [class*='response' i]",
       "main [class*='chat' i]"
     ];
-    return uniqueElements(selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))));
+    return uniqueElements(selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))), "grok");
   }
 
   function findDoubaoCandidates() {
@@ -360,27 +418,21 @@
       "main [class*='reply' i]",
       "main article"
     ];
-    return uniqueElements(selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))));
+    return uniqueElements(selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))), "doubao");
   }
 
   function findDeepSeekCandidates() {
     const selectors = [
       ".ds-message",
-      "[class~='ds-message']",
-      "[class*='ds-message' i]",
-      "[class*='message' i]",
-      "[class*='chat' i]",
-      "[class*='conversation' i]",
-      "[data-testid*='message' i]",
-      "article"
+      "[class~='ds-message']"
     ];
-    return uniqueElements(selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))));
+    return uniqueElements(selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))), "deepseek");
   }
 
   function findFallbackCandidates() {
     const main = document.querySelector("main") || document.body;
     const elements = Array.from(main.querySelectorAll("article, section, [role='article'], div"));
-    return uniqueElements(elements).filter((element) => {
+    return uniqueElements(elements, "web").filter((element) => {
       const text = element.innerText || "";
       const rect = element.getBoundingClientRect();
       const childBlocks = Array.from(element.children).filter((child) => {
