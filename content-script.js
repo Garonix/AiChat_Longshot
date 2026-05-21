@@ -608,6 +608,12 @@
     window.removeEventListener("resize", state.refreshPositions, true);
     window.removeEventListener(`${APP_ID}-locationchange`, state.exitOnNavigation);
     window.removeEventListener("popstate", state.exitOnNavigation);
+    if (state.resizeObserver) {
+      state.resizeObserver.disconnect();
+    }
+    if (state.layoutRefreshTimer) {
+      clearTimeout(state.layoutRefreshTimer);
+    }
     if (state.navigationCheckInterval) {
       clearInterval(state.navigationCheckInterval);
     }
@@ -951,6 +957,7 @@
       right: point.element.isConnected ? pageRectFor(point.element).left + pageRectFor(point.element).width : point.right
     }));
     renderSelection();
+    observeSelectionLayoutTargets();
   }
 
   function getLocationKey() {
@@ -981,6 +988,76 @@
         return result;
       };
     });
+  }
+
+  function scheduleLayoutRefresh() {
+    if (!state || state.layoutRefreshTimer) {
+      return;
+    }
+
+    state.layoutRefreshTimer = setTimeout(() => {
+      if (!state) {
+        return;
+      }
+      state.layoutRefreshTimer = 0;
+      refreshMarkerPositions();
+    }, 80);
+  }
+
+  function observeSelectionLayoutTargets() {
+    if (!state?.resizeObserver) {
+      return;
+    }
+
+    const targets = new Set([
+      document.documentElement,
+      document.body,
+      document.querySelector("main"),
+      chooseScrollRoot()
+    ]);
+
+    findComposerVisualElements().forEach((element) => targets.add(element));
+    state.items.slice(0, 12).forEach((item) => targets.add(item.element));
+    state.points.forEach((point) => targets.add(point.element));
+
+    targets.forEach((element) => {
+      if (element && element.nodeType === Node.ELEMENT_NODE && !state.observedLayoutTargets.has(element)) {
+        state.resizeObserver.observe(element);
+        state.observedLayoutTargets.add(element);
+      }
+    });
+  }
+
+  function findComposerVisualElements() {
+    const selectors = [
+      "textarea",
+      "input[type='text']",
+      "[placeholder]",
+      "[contenteditable='true']",
+      "[role='textbox']",
+      "form",
+      "[class*='composer' i]",
+      "[class*='prompt' i]",
+      "[class*='chat-input' i]",
+      "[class*='message-input' i]",
+      "[class*='input-area' i]",
+      "[class*='input-box' i]",
+      "[class*='inputBox' i]",
+      "[class*='sender' i]",
+      "[class*='send-box' i]",
+      "[aria-label*='prompt' i]",
+      "[aria-label*='message' i]"
+    ];
+
+    const elements = [];
+    document.querySelectorAll(selectors.join(",")).forEach((element) => {
+      let current = element;
+      for (let depth = 0; current && depth < 4; depth += 1) {
+        elements.push(current);
+        current = current.parentElement;
+      }
+    });
+    return Array.from(new Set(elements));
   }
 
   function startSelectionMode() {
@@ -1020,6 +1097,9 @@
       points: [],
       lines: [],
       locationKey: getLocationKey(),
+      resizeObserver: null,
+      observedLayoutTargets: new Set(),
+      layoutRefreshTimer: 0,
       navigationCheckInterval: 0,
       exitOnNavigation: handlePossibleConversationChange,
       lastCandidateScanAt: 0,
@@ -1037,6 +1117,8 @@
     window.addEventListener(`${APP_ID}-locationchange`, state.exitOnNavigation);
     window.addEventListener("popstate", state.exitOnNavigation);
     state.navigationCheckInterval = setInterval(state.exitOnNavigation, 500);
+    state.resizeObserver = new ResizeObserver(scheduleLayoutRefresh);
+    observeSelectionLayoutTargets();
     refreshMarkerPositions();
 
     return { ok: true };
