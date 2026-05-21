@@ -811,6 +811,7 @@
     }
 
     updateToolbar();
+    updatePreviewLayoutSignature();
   }
 
   function getDocumentWidth() {
@@ -1196,6 +1197,7 @@
     });
 
     renderSelection();
+    updatePreviewLayoutSignature();
     observeSelectionLayoutTargets();
   }
 
@@ -1234,7 +1236,7 @@
       return;
     }
 
-    if (options.stablePreview && shouldDelayPreviewRefresh()) {
+    if ((options.stablePreview || hasPreviewLayoutShift()) && shouldDelayPreviewRefresh()) {
       suspendSelectionPreview();
       if (state.layoutRefreshTimer) {
         clearTimeout(state.layoutRefreshTimer);
@@ -1245,6 +1247,7 @@
         }
         state.layoutRefreshTimer = 0;
         refreshMarkerPositions();
+        updatePreviewLayoutSignature();
         revealSelectionPreview();
       }, 300);
       return;
@@ -1260,6 +1263,7 @@
       }
       state.layoutRefreshTimer = 0;
       refreshMarkerPositions();
+      updatePreviewLayoutSignature();
     }, 32);
   }
 
@@ -1299,6 +1303,42 @@
         state.previewRevealTimer = 0;
       }, 520);
     });
+  }
+
+  function hasPreviewLayoutShift() {
+    if (!state?.previewLayoutSignature || !shouldDelayPreviewRefresh()) {
+      return false;
+    }
+
+    const current = getPreviewLayoutSignature();
+    if (!current) {
+      return false;
+    }
+
+    const previous = state.previewLayoutSignature;
+    const leftShift = Math.abs(current.left - previous.left);
+    const widthShift = Math.abs(current.width - previous.width);
+    return leftShift > 12 || widthShift > 18;
+  }
+
+  function updatePreviewLayoutSignature() {
+    if (!state) {
+      return;
+    }
+    state.previewLayoutSignature = getPreviewLayoutSignature();
+  }
+
+  function getPreviewLayoutSignature() {
+    if (!state?.points.length) {
+      return null;
+    }
+    const bounds = getSelectionVisualBounds(state.points);
+    return bounds
+      ? {
+        left: Math.round(bounds.left),
+        width: Math.round(bounds.width)
+      }
+      : null;
   }
 
   function observeSelectionLayoutTargets() {
@@ -1497,6 +1537,7 @@
       observedLayoutTargets: new Set(),
       layoutRefreshTimer: 0,
       previewRevealTimer: 0,
+      previewLayoutSignature: null,
       navigationCheckInterval: 0,
       exitOnNavigation: handlePossibleConversationChange,
       lastCandidateScanAt: 0,
