@@ -1229,12 +1229,12 @@
     });
   }
 
-  function scheduleLayoutRefresh() {
+  function scheduleLayoutRefresh(options = {}) {
     if (!state) {
       return;
     }
 
-    if (shouldDelayPreviewRefresh()) {
+    if (options.stablePreview && shouldDelayPreviewRefresh()) {
       suspendSelectionPreview();
       if (state.layoutRefreshTimer) {
         clearTimeout(state.layoutRefreshTimer);
@@ -1331,22 +1331,32 @@
     }
 
     state.mutationObserver = new MutationObserver((mutations) => {
-      const affectsLayout = mutations.some((mutation) => {
+      let affectsLayout = false;
+      let affectsSidebar = false;
+
+      mutations.forEach((mutation) => {
         const target = mutation.target;
         if (!target || target.nodeType !== Node.ELEMENT_NODE) {
-          return false;
+          return;
         }
         if (target === state.root || state.root?.contains(target)) {
-          return false;
+          return;
         }
         if (mutation.type === "attributes") {
-          return mutation.attributeName === "class" || mutation.attributeName === "style";
+          const relevantAttribute = mutation.attributeName === "class" || mutation.attributeName === "style";
+          affectsLayout = affectsLayout || relevantAttribute;
+          affectsSidebar = affectsSidebar || (relevantAttribute && isSidebarLayoutMutation(mutation));
+          return;
         }
-        return mutation.type === "childList";
+
+        if (mutation.type === "childList") {
+          affectsLayout = true;
+          affectsSidebar = affectsSidebar || isSidebarLayoutMutation(mutation);
+        }
       });
 
       if (affectsLayout) {
-        scheduleLayoutRefresh();
+        scheduleLayoutRefresh({ stablePreview: affectsSidebar });
       }
     });
 
@@ -1356,6 +1366,61 @@
       subtree: true,
       attributeFilter: ["class", "style"]
     });
+  }
+
+  function isSidebarLayoutMutation(mutation) {
+    const target = mutation.target;
+    if (target?.nodeType === Node.ELEMENT_NODE && isSidebarLayoutElement(target)) {
+      return true;
+    }
+
+    if (mutation.type !== "childList") {
+      return false;
+    }
+
+    const changedNodes = [
+      ...Array.from(mutation.addedNodes || []),
+      ...Array.from(mutation.removedNodes || [])
+    ];
+    return changedNodes.some((node) => node.nodeType === Node.ELEMENT_NODE && isSidebarLayoutElement(node));
+  }
+
+  function isSidebarLayoutElement(element) {
+    if (!element || element === document.body || element === document.documentElement) {
+      return false;
+    }
+
+    const sidebarSelector = [
+      "nav",
+      "aside",
+      "mat-sidenav",
+      "bard-sidenav",
+      "side-nav",
+      "[role='navigation']",
+      "[role='complementary']",
+      "[class*='sidebar' i]",
+      "[class*='sider' i]",
+      "[class*='sidenav' i]",
+      "[class*='side-nav' i]",
+      "[class*='drawer' i]",
+      "[class*='history' i]",
+      "[class*='conversation-list' i]",
+      "[class*='chat-list' i]",
+      "[aria-label*='menu' i]",
+      "[aria-label*='navigation' i]"
+    ].join(",");
+
+    const candidate = element.matches?.(sidebarSelector)
+      ? element
+      : element.closest?.(sidebarSelector);
+    if (!candidate || state?.root?.contains(candidate)) {
+      return false;
+    }
+
+    const rect = candidate.getBoundingClientRect();
+    return rect.width > 48
+      && rect.height > window.innerHeight * 0.35
+      && rect.left < window.innerWidth * 0.42;
   }
 
   function findComposerVisualElements() {
@@ -1449,7 +1514,7 @@
     window.addEventListener(`${APP_ID}-locationchange`, state.exitOnNavigation);
     window.addEventListener("popstate", state.exitOnNavigation);
     state.navigationCheckInterval = setInterval(state.exitOnNavigation, 500);
-    state.resizeObserver = new ResizeObserver(scheduleLayoutRefresh);
+    state.resizeObserver = new ResizeObserver(() => scheduleLayoutRefresh());
     observeSelectionLayoutTargets();
     observeLayoutMutations();
     refreshMarkerPositions();
