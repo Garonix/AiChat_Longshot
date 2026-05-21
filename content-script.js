@@ -9,7 +9,7 @@
   const CAPTURE_OVERLAP = 160;
   const PINNED_MARKER_TOP = 60;
   const SELECTION_BLUE = "#2c7df0";
-  const CHATGPT_TOP_INSET = 50;
+  const CHATGPT_TOP_INSET = 52;
 
   let state = null;
 
