@@ -252,7 +252,7 @@
     const normalized = normalizeCandidateElements(elements, platform);
     const visible = Array.from(new Set(normalized)).filter((element) => {
       const rect = element.getBoundingClientRect();
-      return rect.width > 220 && rect.height > 24 && isMainContentElement(element);
+      return rect.width > 220 && rect.height > 24 && isMainContentElement(element, platform);
     });
     return keepRightmostCandidatePerRow(visible);
   }
@@ -345,7 +345,7 @@
     return kept.sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top);
   }
 
-  function isMainContentElement(element) {
+  function isMainContentElement(element, platform = getPlatform()) {
     if (!element || element.closest("nav, aside, header, footer")) {
       return false;
     }
@@ -358,6 +358,11 @@
     const rect = element.getBoundingClientRect();
     const viewportWidth = Math.max(document.documentElement.clientWidth, window.innerWidth || 0);
     const centerX = rect.left + rect.width / 2;
+
+    if (platform === "chatgpt" || platform === "gemini") {
+      return centerX >= viewportWidth * 0.15 && rect.right >= viewportWidth * 0.3;
+    }
+
     const mainRect = main ? main.getBoundingClientRect() : null;
     const minimumContentLeft = viewportWidth >= 900
       ? Math.max(viewportWidth * 0.12, (mainRect?.left || 0) + 96)
@@ -382,7 +387,8 @@
     const selectors = [
       "article[data-testid^='conversation-turn']",
       "[data-testid^='conversation-turn']",
-      "[data-message-author-role]"
+      "[data-message-author-role]",
+      "main article"
     ];
     return uniqueElements(selectors.flatMap((selector) => Array.from(document.querySelectorAll(selector))), "chatgpt");
   }
@@ -813,12 +819,22 @@
   }
 
   function getSelectionVisualBounds(points) {
+    const platform = getPlatform();
+    const contentBounds = getContentTrackVisualBounds(points, platform);
+    if ((platform === "gemini" || platform === "chatgpt") && contentBounds) {
+      return contentBounds;
+    }
+
     const composerRect = findComposerVisualRect();
     if (composerRect) {
       return {
         left: Math.max(0, composerRect.left + window.scrollX),
         width: Math.max(1, composerRect.width)
       };
+    }
+
+    if (contentBounds) {
+      return contentBounds;
     }
 
     const rects = points.map(getPointVisualRect).filter((rect) => rect.right > rect.left);
@@ -835,6 +851,81 @@
       left,
       width: Math.max(1, right - left)
     };
+  }
+
+  function getContentTrackVisualBounds(points, platform = getPlatform()) {
+    const elements = getContentTrackElements(points, platform);
+    const rects = elements
+      .map((element) => element.getBoundingClientRect())
+      .filter((rect) => rect.width > 120 && rect.height > 20 && rect.bottom > 0 && rect.top < window.innerHeight);
+
+    if (!rects.length) {
+      return null;
+    }
+
+    const leftPadding = platform === "gemini" ? 0 : 22;
+    const rightPadding = platform === "gemini" ? 0 : 22;
+    const left = clamp(Math.min(...rects.map((rect) => rect.left)) - leftPadding, 0, window.innerWidth);
+    const right = clamp(Math.max(...rects.map((rect) => rect.right)) + rightPadding, 0, getDocumentWidth());
+
+    if (right - left < 160) {
+      return null;
+    }
+
+    return {
+      left: left + window.scrollX,
+      width: Math.max(1, right - left)
+    };
+  }
+
+  function getContentTrackElements(points, platform) {
+    const selected = points
+      .map((point) => point.element)
+      .filter((element) => element?.isConnected);
+    const source = selected.length
+      ? selected
+      : state?.items
+        ?.filter((item) => {
+          const rect = item.element.getBoundingClientRect();
+          return rect.bottom > 0 && rect.top < window.innerHeight;
+        })
+        .slice(0, 20)
+        .map((item) => item.element) || [];
+
+    return source.map((element) => getContentTrackElement(element, platform)).filter(Boolean);
+  }
+
+  function getContentTrackElement(element, platform) {
+    if (!element || element.nodeType !== Node.ELEMENT_NODE) {
+      return null;
+    }
+    if (platform !== "gemini") {
+      return element;
+    }
+
+    const main = document.querySelector("main");
+    const baseRect = element.getBoundingClientRect();
+    let current = element;
+    let best = element;
+    let bestWidth = baseRect.width;
+
+    for (let depth = 0; current && depth < 8; depth += 1) {
+      const rect = current.getBoundingClientRect();
+      const style = getComputedStyle(current);
+      const inMain = !main || main.contains(current);
+      const saneWidth = rect.width >= baseRect.width && rect.width > window.innerWidth * 0.42 && rect.width < window.innerWidth * 0.9;
+      const saneHeight = rect.height >= baseRect.height && rect.height < window.innerHeight * 1.8;
+      const visible = style.display !== "none" && style.visibility !== "hidden" && style.opacity !== "0";
+
+      if (inMain && saneWidth && saneHeight && visible && rect.width >= bestWidth) {
+        best = current;
+        bestWidth = rect.width;
+      }
+
+      current = current.parentElement;
+    }
+
+    return best;
   }
 
   function getMarkerVisualLeft() {
