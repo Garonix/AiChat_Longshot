@@ -8,6 +8,7 @@
   const JPEG_QUALITY = 0.92;
   const CAPTURE_OVERLAP = 160;
   const PINNED_MARKER_TOP = 60;
+  const SELECTION_BLUE = "#2c7df0";
 
   let state = null;
 
@@ -594,22 +595,22 @@
         z-index: 2147483646;
         width: 18px;
         height: 18px;
-        border: 2px solid #172026;
+        border: 2px solid ${SELECTION_BLUE};
         border-radius: 50%;
         background: #fff;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+        box-shadow: 0 4px 12px rgba(44, 125, 240, 0.26);
         cursor: pointer;
       }
       .${APP_ID}-point:hover {
         transform: scale(1.15);
       }
       .${APP_ID}-point[data-picked="1"] {
-        border-color: #0b8f55;
-        background: #0b8f55;
+        border-color: ${SELECTION_BLUE};
+        background: ${SELECTION_BLUE};
       }
       .${APP_ID}-point[data-picked="2"] {
-        border-color: #ba4b00;
-        background: #ba4b00;
+        border-color: ${SELECTION_BLUE};
+        background: ${SELECTION_BLUE};
       }
       .${APP_ID}-line {
         position: absolute;
@@ -620,10 +621,10 @@
         pointer-events: none;
       }
       .${APP_ID}-line[data-picked="1"] {
-        background: #2c7df0;
+        background: ${SELECTION_BLUE};
       }
       .${APP_ID}-line[data-picked="2"] {
-        background: #2c7df0;
+        background: ${SELECTION_BLUE};
       }
       .${APP_ID}-range {
         position: absolute;
@@ -836,6 +837,33 @@
     };
   }
 
+  function getMarkerVisualLeft() {
+    const bounds = getSelectionVisualBounds(state?.points || []);
+    if (bounds.width > 1 && bounds.left > 0) {
+      return Math.max(8, Math.floor(bounds.left - 34));
+    }
+    return state?.markerLeft || 8;
+  }
+
+  function getItemSelectionIndex(item) {
+    if (!state) {
+      return -1;
+    }
+    return state.points.findIndex((point) => point.element === item.element);
+  }
+
+  function getCandidateMarkerCenterTop(item, selectionIndex) {
+    if (selectionIndex !== -1) {
+      const point = state.points[selectionIndex];
+      return selectionIndex === 0
+        ? getSelectionVisualTop(point.top - 5)
+        : getSelectionVisualBottom(point.bottom);
+    }
+
+    const viewportRect = item.element.getBoundingClientRect();
+    return window.scrollY + clamp(viewportRect.top - 5, PINNED_MARKER_TOP, window.innerHeight - 34);
+  }
+
   function applySelectionWidth(element, points) {
     const bounds = getSelectionVisualBounds(points);
     element.style.left = `${bounds.left}px`;
@@ -979,8 +1007,6 @@
       return;
     }
 
-    const freshLeft = Math.floor(Math.min(...fresh.map((element) => pageRectFor(element).left)) - 34);
-    state.markerLeft = Math.max(8, Math.min(state.markerLeft, freshLeft));
     fresh.forEach((element) => createCandidateItem(element));
   }
 
@@ -991,15 +1017,6 @@
 
     discoverVisibleCandidates();
 
-    state.items.forEach((item) => {
-      const viewportRect = item.element.getBoundingClientRect();
-      const intersectsViewport = viewportRect.bottom > 0 && viewportRect.top < window.innerHeight;
-      const markerViewportTop = clamp(viewportRect.top - 9, PINNED_MARKER_TOP, window.innerHeight - 34);
-      item.marker.classList.toggle(`${APP_ID}-hidden`, !intersectsViewport);
-      item.marker.style.top = `${window.scrollY + markerViewportTop}px`;
-      item.marker.style.left = `${state.markerLeft}px`;
-    });
-
     state.points = state.points.map((point) => ({
       ...point,
       element: point.element,
@@ -1008,6 +1025,20 @@
       left: point.element.isConnected ? pageRectFor(point.element).left : point.left,
       right: point.element.isConnected ? pageRectFor(point.element).left + pageRectFor(point.element).width : point.right
     }));
+
+    const markerLeft = getMarkerVisualLeft();
+    state.items.forEach((item) => {
+      const viewportRect = item.element.getBoundingClientRect();
+      const selectionIndex = getItemSelectionIndex(item);
+      const markerCenterTop = getCandidateMarkerCenterTop(item, selectionIndex);
+      const markerViewportCenter = markerCenterTop - window.scrollY;
+      const intersectsViewport = viewportRect.bottom > 0 && viewportRect.top < window.innerHeight;
+      const selectedLineVisible = selectionIndex !== -1 && markerViewportCenter >= 0 && markerViewportCenter <= window.innerHeight;
+      item.marker.classList.toggle(`${APP_ID}-hidden`, !(intersectsViewport || selectedLineVisible));
+      item.marker.style.top = `${markerCenterTop - 9}px`;
+      item.marker.style.left = `${markerLeft}px`;
+    });
+
     renderSelection();
     observeSelectionLayoutTargets();
   }
@@ -1053,7 +1084,7 @@
       }
       state.layoutRefreshTimer = 0;
       refreshMarkerPositions();
-    }, 80);
+    }, 32);
   }
 
   function observeSelectionLayoutTargets() {
