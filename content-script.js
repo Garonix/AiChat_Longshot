@@ -670,6 +670,9 @@
     if (state.resizeObserver) {
       state.resizeObserver.disconnect();
     }
+    if (state.mutationObserver) {
+      state.mutationObserver.disconnect();
+    }
     if (state.layoutRefreshTimer) {
       clearTimeout(state.layoutRefreshTimer);
     }
@@ -821,7 +824,7 @@
   function getSelectionVisualBounds(points) {
     const platform = getPlatform();
     const contentBounds = getContentTrackVisualBounds(points, platform);
-    if ((platform === "gemini" || platform === "chatgpt") && contentBounds) {
+    if (platform === "gemini" && contentBounds) {
       return contentBounds;
     }
 
@@ -831,6 +834,10 @@
         left: Math.max(0, composerRect.left + window.scrollX),
         width: Math.max(1, composerRect.width)
       };
+    }
+
+    if (platform === "chatgpt" && contentBounds) {
+      return contentBounds;
     }
 
     if (contentBounds) {
@@ -993,12 +1000,17 @@
   function findComposerVisualRect() {
     const candidates = [];
     const selectors = [
+      "#prompt-textarea",
       "textarea",
       "input[type='text']",
       "[placeholder]",
       "[contenteditable='true']",
       "[role='textbox']",
       "form",
+      "form[data-type='unified-composer']",
+      "[data-testid='composer']",
+      "[data-testid='composer-root']",
+      "[data-testid='prompt-textarea']",
       "[class*='composer' i]",
       "[class*='prompt' i]",
       "[class*='chat-input' i]",
@@ -1062,7 +1074,15 @@
     const visibleBottom = Math.min(rect.bottom, window.innerHeight);
     const bottomDistance = Math.abs(window.innerHeight - visibleBottom);
     const centerDistance = Math.abs((rect.left + rect.right) / 2 - window.innerWidth / 2);
-    return bottomDistance * 2 + centerDistance * 0.05 - rect.width * 0.18 - rect.height * 0.35;
+    const widthRatio = rect.width / window.innerWidth;
+    const tooWidePenalty = widthRatio > 0.86 ? (widthRatio - 0.86) * window.innerWidth * 1.8 : 0;
+    const tooTallPenalty = rect.height > 260 ? (rect.height - 260) * 1.2 : 0;
+    return bottomDistance * 2
+      + centerDistance * 0.05
+      + tooWidePenalty
+      + tooTallPenalty
+      - rect.width * 0.08
+      - rect.height * 0.25;
   }
 
   function createCandidateItem(element) {
@@ -1202,6 +1222,39 @@
     });
   }
 
+  function observeLayoutMutations() {
+    if (!state || state.mutationObserver) {
+      return;
+    }
+
+    state.mutationObserver = new MutationObserver((mutations) => {
+      const affectsLayout = mutations.some((mutation) => {
+        const target = mutation.target;
+        if (!target || target.nodeType !== Node.ELEMENT_NODE) {
+          return false;
+        }
+        if (target === state.root || state.root?.contains(target)) {
+          return false;
+        }
+        if (mutation.type === "attributes") {
+          return mutation.attributeName === "class" || mutation.attributeName === "style";
+        }
+        return mutation.type === "childList";
+      });
+
+      if (affectsLayout) {
+        scheduleLayoutRefresh();
+      }
+    });
+
+    state.mutationObserver.observe(document.body, {
+      attributes: true,
+      childList: true,
+      subtree: true,
+      attributeFilter: ["class", "style"]
+    });
+  }
+
   function findComposerVisualElements() {
     const selectors = [
       "textarea",
@@ -1272,6 +1325,7 @@
       lines: [],
       locationKey: getLocationKey(),
       resizeObserver: null,
+      mutationObserver: null,
       observedLayoutTargets: new Set(),
       layoutRefreshTimer: 0,
       navigationCheckInterval: 0,
@@ -1293,6 +1347,7 @@
     state.navigationCheckInterval = setInterval(state.exitOnNavigation, 500);
     state.resizeObserver = new ResizeObserver(scheduleLayoutRefresh);
     observeSelectionLayoutTargets();
+    observeLayoutMutations();
     refreshMarkerPositions();
 
     return { ok: true };
