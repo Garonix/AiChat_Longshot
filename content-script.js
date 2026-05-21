@@ -817,7 +817,7 @@
   }
 
   function getComposerVisualRect() {
-    return state?.currentComposerRect || state?.lastComposerRect || null;
+    return state?.currentComposerRect || null;
   }
 
   function updateComposerVisualCache() {
@@ -827,13 +827,7 @@
 
     const rect = findComposerVisualRect();
     if (rect) {
-      state.lastComposerRect = freezeRect(rect);
-      state.currentComposerRect = state.lastComposerRect;
-      return;
-    }
-
-    if (state?.lastComposerRect && state.lastComposerRect.bottom > window.innerHeight * 0.55) {
-      state.currentComposerRect = state.lastComposerRect;
+      state.currentComposerRect = freezeRect(rect);
       return;
     }
 
@@ -856,14 +850,10 @@
     const selectors = [
       "textarea",
       "input[type='text']",
-      "#prompt-textarea",
       "[placeholder]",
       "[contenteditable='true']",
       "[role='textbox']",
       "form",
-      "[data-testid*='composer' i]",
-      "[data-testid*='prompt' i]",
-      "[data-testid*='textbox' i]",
       "[class*='composer' i]",
       "[class*='prompt' i]",
       "[class*='chat-input' i]",
@@ -873,8 +863,6 @@
       "[class*='inputBox' i]",
       "[class*='sender' i]",
       "[class*='send-box' i]",
-      "[id*='composer' i]",
-      "[id*='prompt' i]",
       "[aria-label*='prompt' i]",
       "[aria-label*='message' i]",
       "[aria-label*='发送' i]",
@@ -915,7 +903,7 @@
     const rect = element.getBoundingClientRect();
     const style = getComputedStyle(element);
     return rect.width > window.innerWidth * 0.35
-      && rect.width < window.innerWidth * 0.97
+      && rect.width < window.innerWidth * 0.94
       && rect.height >= 56
       && rect.height < window.innerHeight * 0.45
       && rect.bottom > window.innerHeight * 0.62
@@ -929,12 +917,7 @@
     const visibleBottom = Math.min(rect.bottom, window.innerHeight);
     const bottomDistance = Math.abs(window.innerHeight - visibleBottom);
     const centerDistance = Math.abs((rect.left + rect.right) / 2 - window.innerWidth / 2);
-    const targetMin = window.innerWidth * 0.52;
-    const targetMax = window.innerWidth * 0.82;
-    const widthPenalty = rect.width < targetMin
-      ? (targetMin - rect.width) * 0.28
-      : Math.max(0, rect.width - targetMax) * 0.14;
-    return bottomDistance * 2 + centerDistance * 0.05 + widthPenalty - rect.height * 0.35;
+    return bottomDistance * 2 + centerDistance * 0.05 - rect.width * 0.18 - rect.height * 0.35;
   }
 
   function createCandidateItem(element) {
@@ -1051,7 +1034,6 @@
       items: [],
       points: [],
       lines: [],
-      lastComposerRect: null,
       currentComposerRect: null,
       lastCandidateScanAt: 0,
       refreshFrame: 0,
