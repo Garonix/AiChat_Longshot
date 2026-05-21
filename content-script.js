@@ -605,6 +605,7 @@
         border: 2px solid ${SELECTION_BLUE};
         border-radius: 50%;
         background: #fff;
+        opacity: 1;
         box-shadow: 0 4px 12px rgba(44, 125, 240, 0.26);
         cursor: pointer;
       }
@@ -643,11 +644,13 @@
         background: rgba(44, 125, 240, 0.035);
         box-shadow: inset 0 0 0 1px rgba(44, 125, 240, 0.12);
       }
+      .${APP_ID}-preview-suspended .${APP_ID}-point,
       .${APP_ID}-preview-suspended .${APP_ID}-line,
       .${APP_ID}-preview-suspended .${APP_ID}-range {
         opacity: 0;
         transition: none;
       }
+      .${APP_ID}-preview-revealing .${APP_ID}-point,
       .${APP_ID}-preview-revealing .${APP_ID}-line,
       .${APP_ID}-preview-revealing .${APP_ID}-range {
         transition: opacity 500ms ease;

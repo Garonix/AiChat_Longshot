@@ -51,4 +51,4 @@ The extension only reads the visual rendering of the current tab locally to gene
 
 ## Version
 
-Current version: `v0.2.42`
+Current version: `v0.2.43`
