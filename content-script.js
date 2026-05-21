@@ -9,6 +9,7 @@
   const CAPTURE_OVERLAP = 160;
   const PINNED_MARKER_TOP = 60;
   const SELECTION_BLUE = "#2c7df0";
+  const CHATGPT_TOP_INSET = 10;
 
   let state = null;
 
@@ -772,7 +773,7 @@
       const line = createElement("div", `${APP_ID}-line`);
       line.dataset.picked = String(index + 1);
       const lineTop = index === 0
-        ? getSelectionVisualTop(point.top - 5)
+        ? getSelectionStartLineTop(point.top)
         : getSelectionVisualBottom(point.bottom);
       line.style.top = `${lineTop}px`;
       applySelectionWidth(line, state.points);
@@ -830,18 +831,18 @@
 
     const composerRect = findComposerVisualRect();
     if (composerRect) {
-      return {
+      return applyPlatformSelectionInset({
         left: Math.max(0, composerRect.left + window.scrollX),
         width: Math.max(1, composerRect.width)
-      };
+      }, platform);
     }
 
     if (platform === "chatgpt" && contentBounds) {
-      return contentBounds;
+      return applyPlatformSelectionInset(contentBounds, platform);
     }
 
     if (contentBounds) {
-      return contentBounds;
+      return applyPlatformSelectionInset(contentBounds, platform);
     }
 
     const rects = points.map(getPointVisualRect).filter((rect) => rect.right > rect.left);
@@ -854,10 +855,30 @@
 
     const left = Math.max(0, Math.min(...rects.map((rect) => rect.left)) - 22);
     const right = Math.min(getDocumentWidth(), Math.max(...rects.map((rect) => rect.right)) + 22);
-    return {
+    return applyPlatformSelectionInset({
       left,
       width: Math.max(1, right - left)
+    }, platform);
+  }
+
+  function applyPlatformSelectionInset(bounds, platform = getPlatform()) {
+    if (!bounds || platform !== "chatgpt") {
+      return bounds;
+    }
+
+    const inset = getChatGptHorizontalInset(bounds.width);
+    if (bounds.width - inset * 2 < 160) {
+      return bounds;
+    }
+
+    return {
+      left: bounds.left + inset,
+      width: bounds.width - inset * 2
     };
+  }
+
+  function getChatGptHorizontalInset(width) {
+    return Math.round(clamp(width * 0.045, 24, 56));
   }
 
   function getContentTrackVisualBounds(points, platform = getPlatform()) {
@@ -954,7 +975,7 @@
     if (selectionIndex !== -1) {
       const point = state.points[selectionIndex];
       return selectionIndex === 0
-        ? getSelectionVisualTop(point.top - 5)
+        ? getSelectionStartLineTop(point.top)
         : getSelectionVisualBottom(point.bottom);
     }
 
@@ -971,7 +992,7 @@
 
   function applySelectionRangeOverlay(top, bottom) {
     const bounds = getSelectionVisualBounds(state.points);
-    const adjustedTop = getSelectionVisualTop(top - 5);
+    const adjustedTop = getSelectionStartLineTop(top);
     const visualBottom = getSelectionVisualBottom(bottom);
     state.rangeOverlay.style.top = `${adjustedTop}px`;
     state.rangeOverlay.style.left = `${bounds.left}px`;
@@ -985,6 +1006,13 @@
       ? { top: 0 }
       : root.getBoundingClientRect();
     return Math.max(logicalTop, window.scrollY + Math.max(0, rootRect.top));
+  }
+
+  function getSelectionStartLineTop(pointTop) {
+    const baseTop = getSelectionVisualTop(pointTop - 5);
+    return getPlatform() === "chatgpt"
+      ? baseTop + CHATGPT_TOP_INSET
+      : baseTop;
   }
 
   function getSelectionVisualBottom(logicalBottom) {
