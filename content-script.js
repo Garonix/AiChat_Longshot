@@ -625,6 +625,7 @@
         right: 0;
         z-index: 2147483644;
         height: 2px;
+        opacity: 1;
         pointer-events: none;
       }
       .${APP_ID}-line[data-picked="1"] {
@@ -636,10 +637,20 @@
       .${APP_ID}-range {
         position: absolute;
         z-index: 1;
+        opacity: 1;
         pointer-events: none;
         border-radius: 8px;
         background: rgba(44, 125, 240, 0.035);
         box-shadow: inset 0 0 0 1px rgba(44, 125, 240, 0.12);
+      }
+      .${APP_ID}-preview-suspended .${APP_ID}-line,
+      .${APP_ID}-preview-suspended .${APP_ID}-range {
+        opacity: 0;
+        transition: none;
+      }
+      .${APP_ID}-preview-revealing .${APP_ID}-line,
+      .${APP_ID}-preview-revealing .${APP_ID}-range {
+        transition: opacity 500ms ease;
       }
       .${APP_ID}-hidden {
         display: none !important;
@@ -676,6 +687,9 @@
     }
     if (state.layoutRefreshTimer) {
       clearTimeout(state.layoutRefreshTimer);
+    }
+    if (state.previewRevealTimer) {
+      clearTimeout(state.previewRevealTimer);
     }
     if (state.navigationCheckInterval) {
       clearInterval(state.navigationCheckInterval);
@@ -1213,7 +1227,27 @@
   }
 
   function scheduleLayoutRefresh() {
-    if (!state || state.layoutRefreshTimer) {
+    if (!state) {
+      return;
+    }
+
+    if (shouldDelayPreviewRefresh()) {
+      suspendSelectionPreview();
+      if (state.layoutRefreshTimer) {
+        clearTimeout(state.layoutRefreshTimer);
+      }
+      state.layoutRefreshTimer = setTimeout(() => {
+        if (!state) {
+          return;
+        }
+        state.layoutRefreshTimer = 0;
+        refreshMarkerPositions();
+        revealSelectionPreview();
+      }, 300);
+      return;
+    }
+
+    if (state.layoutRefreshTimer) {
       return;
     }
 
@@ -1224,6 +1258,44 @@
       state.layoutRefreshTimer = 0;
       refreshMarkerPositions();
     }, 32);
+  }
+
+  function shouldDelayPreviewRefresh() {
+    const platform = getPlatform();
+    return state?.points.length > 0 && (platform === "gemini" || platform === "deepseek");
+  }
+
+  function suspendSelectionPreview() {
+    if (!state?.root || state.points.length === 0) {
+      return;
+    }
+    if (state.previewRevealTimer) {
+      clearTimeout(state.previewRevealTimer);
+      state.previewRevealTimer = 0;
+    }
+    state.root.classList.remove(`${APP_ID}-preview-revealing`);
+    state.root.classList.add(`${APP_ID}-preview-suspended`);
+  }
+
+  function revealSelectionPreview() {
+    if (!state?.root || !state.root.classList.contains(`${APP_ID}-preview-suspended`)) {
+      return;
+    }
+
+    state.root.classList.add(`${APP_ID}-preview-revealing`);
+    requestAnimationFrame(() => {
+      if (!state?.root) {
+        return;
+      }
+      state.root.classList.remove(`${APP_ID}-preview-suspended`);
+      state.previewRevealTimer = setTimeout(() => {
+        if (!state?.root) {
+          return;
+        }
+        state.root.classList.remove(`${APP_ID}-preview-revealing`);
+        state.previewRevealTimer = 0;
+      }, 520);
+    });
   }
 
   function observeSelectionLayoutTargets() {
@@ -1356,6 +1428,7 @@
       mutationObserver: null,
       observedLayoutTargets: new Set(),
       layoutRefreshTimer: 0,
+      previewRevealTimer: 0,
       navigationCheckInterval: 0,
       exitOnNavigation: handlePossibleConversationChange,
       lastCandidateScanAt: 0,
