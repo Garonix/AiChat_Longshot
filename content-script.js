@@ -606,8 +606,10 @@
 
     window.removeEventListener("scroll", state.refreshPositions, true);
     window.removeEventListener("resize", state.refreshPositions, true);
-    if (state.refreshFrame) {
-      cancelAnimationFrame(state.refreshFrame);
+    window.removeEventListener(`${APP_ID}-locationchange`, state.exitOnNavigation);
+    window.removeEventListener("popstate", state.exitOnNavigation);
+    if (state.navigationCheckInterval) {
+      clearInterval(state.navigationCheckInterval);
     }
     state.root.remove();
     state = null;
@@ -686,8 +688,6 @@
       return;
     }
 
-    updateComposerVisualCache();
-
     state.items.forEach((item) => {
       delete item.marker.dataset.picked;
     });
@@ -700,34 +700,31 @@
       if (item) {
         item.marker.dataset.picked = String(index + 1);
       }
+
+      const line = createElement("div", `${APP_ID}-line`);
+      line.dataset.picked = String(index + 1);
+      const lineTop = index === 0
+        ? getSelectionVisualTop(point.top - 5)
+        : getSelectionVisualBottom(point.bottom);
+      line.style.top = `${lineTop}px`;
+      applySelectionWidth(line, state.points);
+      state.root.appendChild(line);
+      state.lines.push(line);
     });
 
     if (state.points.length === 1) {
       const top = state.points[0].top;
       const bottom = state.points[0].bottom;
-      appendSelectionLine(top - 5);
-      appendSelectionLine(bottom);
       state.rangeOverlay.classList.remove(`${APP_ID}-hidden`);
       applySelectionRangeOverlay(top, bottom);
     } else if (state.points.length >= 2) {
       const top = state.points[0].top;
       const bottom = state.points[1].bottom;
-      appendSelectionLine(top - 5);
-      appendSelectionLine(bottom);
       state.rangeOverlay.classList.remove(`${APP_ID}-hidden`);
       applySelectionRangeOverlay(top, bottom);
     }
 
     updateToolbar();
-  }
-
-  function appendSelectionLine(logicalTop) {
-    const line = createElement("div", `${APP_ID}-line`);
-    line.dataset.picked = "1";
-    line.style.top = `${getSelectionVisualTop(getSelectionVisualBottom(logicalTop))}px`;
-    applySelectionWidth(line, state.points);
-    state.root.appendChild(line);
-    state.lines.push(line);
   }
 
   function getDocumentWidth() {
@@ -757,7 +754,7 @@
   }
 
   function getSelectionVisualBounds(points) {
-    const composerRect = getComposerVisualRect();
+    const composerRect = findComposerVisualRect();
     if (composerRect) {
       return {
         left: Math.max(0, composerRect.left + window.scrollX),
@@ -807,42 +804,13 @@
   }
 
   function getSelectionVisualBottom(logicalBottom) {
-    const composerRect = getComposerVisualRect();
+    const composerRect = findComposerVisualRect();
     if (!composerRect) {
       return logicalBottom;
     }
 
     const composerTop = window.scrollY + composerRect.top;
     return Math.min(logicalBottom, composerTop);
-  }
-
-  function getComposerVisualRect() {
-    return state?.currentComposerRect || null;
-  }
-
-  function updateComposerVisualCache() {
-    if (!state) {
-      return;
-    }
-
-    const rect = findComposerVisualRect();
-    if (rect) {
-      state.currentComposerRect = freezeRect(rect);
-      return;
-    }
-
-    state.currentComposerRect = null;
-  }
-
-  function freezeRect(rect) {
-    return {
-      left: rect.left,
-      right: rect.right,
-      top: rect.top,
-      bottom: rect.bottom,
-      width: rect.width,
-      height: rect.height
-    };
   }
 
   function findComposerVisualRect() {
@@ -985,23 +953,40 @@
     renderSelection();
   }
 
-  function scheduleRefreshPositions() {
-    if (!state || state.refreshFrame) {
+  function getLocationKey() {
+    return `${location.origin}${location.pathname}${location.search}${location.hash}`;
+  }
+
+  function handlePossibleConversationChange() {
+    if (!state) {
       return;
     }
 
-    state.refreshFrame = requestAnimationFrame(() => {
-      if (!state) {
-        return;
-      }
-      state.refreshFrame = 0;
-      refreshMarkerPositions();
+    if (state.locationKey !== getLocationKey()) {
+      clearSelectionMode();
+    }
+  }
+
+  function installNavigationWatcher() {
+    if (window.__CHAT_LONGSHOT_NAV_WATCHER__) {
+      return;
+    }
+
+    window.__CHAT_LONGSHOT_NAV_WATCHER__ = true;
+    ["pushState", "replaceState"].forEach((method) => {
+      const original = history[method];
+      history[method] = function patchedHistoryMethod(...args) {
+        const result = original.apply(this, args);
+        window.dispatchEvent(new Event(`${APP_ID}-locationchange`));
+        return result;
+      };
     });
   }
 
   function startSelectionMode() {
     clearSelectionMode();
     ensureStyles();
+    installNavigationWatcher();
 
     const candidates = findCandidates();
     if (!candidates.length) {
@@ -1034,10 +1019,11 @@
       items: [],
       points: [],
       lines: [],
-      currentComposerRect: null,
+      locationKey: getLocationKey(),
+      navigationCheckInterval: 0,
+      exitOnNavigation: handlePossibleConversationChange,
       lastCandidateScanAt: 0,
-      refreshFrame: 0,
-      refreshPositions: scheduleRefreshPositions
+      refreshPositions: refreshMarkerPositions
     };
 
     candidates.forEach((element) => createCandidateItem(element));
@@ -1048,6 +1034,9 @@
 
     window.addEventListener("scroll", state.refreshPositions, true);
     window.addEventListener("resize", state.refreshPositions, true);
+    window.addEventListener(`${APP_ID}-locationchange`, state.exitOnNavigation);
+    window.addEventListener("popstate", state.exitOnNavigation);
+    state.navigationCheckInterval = setInterval(state.exitOnNavigation, 500);
     refreshMarkerPositions();
 
     return { ok: true };
