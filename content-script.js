@@ -9,7 +9,7 @@
   const CAPTURE_OVERLAP = 160;
   const PINNED_MARKER_TOP = 60;
   const SELECTION_BLUE = "#2c7df0";
-  const CHATGPT_TOP_INSET = 10;
+  const CHATGPT_TOP_INSET = 18;
 
   let state = null;
 
@@ -878,7 +878,7 @@
   }
 
   function getChatGptHorizontalInset(width) {
-    return Math.round(clamp(width * 0.045, 24, 56));
+    return Math.round(clamp(width * 0.07, 36, 88));
   }
 
   function getContentTrackVisualBounds(points, platform = getPlatform()) {
